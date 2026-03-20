@@ -68,19 +68,19 @@ function JFFLogo() {
   return (
     <svg height="38" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
       {/* Red column */}
-      <rect x="2" y="8" width="18" height="62" fill="#E8442A"/>
-      {/* Dark circle bottom-left, overlapping red */}
-      <circle cx="2" cy="65" r="13" fill="#231F20"/>
+      <rect x="2" y="8" width="16" height="62" fill="#E8442A"/>
+      {/* Small dark circle, bottom, overlapping right edge of red */}
+      <circle cx="20" cy="62" r="9" fill="#231F20"/>
 
       {/* Cyan column */}
-      <rect x="26" y="4" width="18" height="66" fill="#2BBFBF"/>
-      {/* Dark circle mid, overlapping cyan */}
-      <circle cx="26" cy="48" r="14" fill="#231F20"/>
+      <rect x="28" y="4" width="16" height="66" fill="#2BBFBF"/>
+      {/* Small dark circle, middle, overlapping right edge of cyan */}
+      <circle cx="46" cy="44" r="10" fill="#231F20"/>
 
       {/* Yellow-green column */}
-      <rect x="50" y="0" width="18" height="70" fill="#C8D400"/>
-      {/* Dark circle upper, overlapping yellow */}
-      <circle cx="63" cy="22" r="12" fill="#231F20"/>
+      <rect x="54" y="0" width="16" height="70" fill="#C8D400"/>
+      {/* Small dark circle, upper, overlapping right edge of yellow */}
+      <circle cx="70" cy="20" r="8" fill="#231F20"/>
 
       {/* Wordmark */}
       <text x="88" y="34" fontFamily="'DM Sans', sans-serif" fontWeight="700" fontSize="22" fill="#231F20">Jobs for</text>
