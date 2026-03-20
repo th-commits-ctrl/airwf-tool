@@ -67,18 +67,24 @@ const ACTION_META = {
 function JFFLogo() {
   return (
     <svg height="38" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Red column + overlapping dark circle */}
-      <rect x="2"  y="8"  width="20" height="64" fill="#E8442A"/>
-      <circle cx="12" cy="62" r="16" fill="#231F20" opacity="0.85"/>
-      {/* Cyan column + overlapping dark circle */}
-      <rect x="28" y="2"  width="20" height="70" fill="#2BBFBF"/>
-      <circle cx="38" cy="46" r="17" fill="#231F20" opacity="0.85"/>
-      {/* Yellow column + overlapping dark circle */}
-      <rect x="54" y="0"  width="20" height="74" fill="#C8D400"/>
-      <circle cx="64" cy="22" r="15" fill="#231F20" opacity="0.85"/>
+      {/* Red column */}
+      <rect x="2" y="8" width="18" height="62" fill="#E8442A"/>
+      {/* Dark circle bottom-left, overlapping red */}
+      <circle cx="2" cy="65" r="13" fill="#231F20"/>
+
+      {/* Cyan column */}
+      <rect x="26" y="4" width="18" height="66" fill="#2BBFBF"/>
+      {/* Dark circle mid, overlapping cyan */}
+      <circle cx="26" cy="48" r="14" fill="#231F20"/>
+
+      {/* Yellow-green column */}
+      <rect x="50" y="0" width="18" height="70" fill="#C8D400"/>
+      {/* Dark circle upper, overlapping yellow */}
+      <circle cx="63" cy="22" r="12" fill="#231F20"/>
+
       {/* Wordmark */}
-      <text x="92" y="36" fontFamily="'DM Sans', sans-serif" fontWeight="700" fontSize="24" fill="#231F20">Jobs for</text>
-      <text x="92" y="66" fontFamily="'DM Sans', sans-serif" fontWeight="700" fontSize="24" fill="#231F20">the Future</text>
+      <text x="88" y="34" fontFamily="'DM Sans', sans-serif" fontWeight="700" fontSize="22" fill="#231F20">Jobs for</text>
+      <text x="88" y="62" fontFamily="'DM Sans', sans-serif" fontWeight="700" fontSize="22" fill="#231F20">the Future</text>
     </svg>
   );
 }
