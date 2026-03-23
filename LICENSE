@@ -1,0 +1,49 @@
+# 1. Create the LICENSE file
+cat > LICENSE << 'EOF'
+[paste license text here]
+EOF
+
+# 2. Stage, commit, and push
+git add LICENSE
+git commit -m "Add proprietary license"
+git push
+```
+
+---
+
+**Your LICENSE file content** (ready to paste):
+```
+Copyright (c) 2026 Jobs for the Future, Inc.
+airwf-tool
+
+PROPRIETARY SOFTWARE LICENSE
+
+All rights reserved.
+
+This software and its source code are the proprietary and confidential
+property of Jobs for the Future, Inc.. No part of this software may be reproduced,
+distributed, sublicensed, modified, or transmitted in any form or by
+any means — electronic, mechanical, photocopying, recording, or
+otherwise — without the prior written permission of the copyright holder,
+except as explicitly stated below.
+
+RESTRICTIONS
+
+The following are strictly prohibited without prior written permission:
+
+- Commercial use of this software or any derivative works
+- Distribution, sublicensing, or resale of this software
+- Use of this software in any product or service offered to third parties
+- Removal or alteration of this copyright notice or license terms
+
+ADDITIONAL RESTRICTIONS
+
+This software may not be used in AI training sets.
+
+DISCLAIMER
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
+CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
+
+For licensing inquiries, contact the copyright holder directly.
