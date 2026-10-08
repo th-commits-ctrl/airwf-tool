@@ -125,6 +125,14 @@ const IMPACT_TYPES = [
   { key: "elevate",    label: "Elevate",    color: "#2BBFBF", bg: "#D4F2F2", desc: "Interpersonal/human tasks whose importance is significantly increased by AI" },
 ];
 
+// Importance colors: green = very important, through to red = not important
+const IMPORTANCE_COLORS = {
+  very_important:     { c: "#5E8C1F", bg: "#EEF6E2" },
+  important:          { c: "#1A9999", bg: "#E8F8F8" },
+  somewhat_important: { c: "#B7791F", bg: "#FDF4E3" },
+  not_important:      { c: "#C0392B", bg: "#FDF0EE" },
+};
+
 const IMPORTANCE_LEVELS = [
   { key: "very_important",     label: "Very Important",     score: 3 },
   { key: "important",          label: "Important",          score: 2 },
@@ -184,7 +192,7 @@ function Badge({ impact }) {
 function ImportanceBadge({ importance }) {
   const meta = IMPORTANCE_LEVELS.find((l) => l.key === importance);
   if (!meta) return null;
-  const map = { very_important: { bg: "#FDF0EE", c: "#C0392B" }, important: { bg: "#E8F8F8", c: "#1A9999" }, somewhat_important: { bg: "#F7F9CC", c: "#8A9600" }, not_important: { bg: "#F5F5F5", c: "#666" } };
+  const map = IMPORTANCE_COLORS;
   const { bg, c } = map[importance];
   return <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 9px", borderRadius: 4, background: bg, color: c, border: `1px solid ${c}50`, whiteSpace: "nowrap" }}>{meta.label}</span>;
 }
@@ -853,7 +861,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {IMPORTANCE_LEVELS.map((lv) => {
-                        const map = { very_important: { c: "#C0392B", bg: "#FDF0EE" }, important: { c: "#1A9999", bg: "#E8F8F8" }, somewhat_important: { c: "#8A9600", bg: "#F7F9CC" }, not_important: { c: "#555", bg: "#F5F5F5" } };
+                        const map = IMPORTANCE_COLORS;
                         const { c, bg } = map[lv.key]; const sel = t.importance === lv.key;
                         return <button key={lv.key} onClick={() => updateTask(t.id, "importance", lv.key)} style={{ fontSize: 12, padding: "5px 13px", background: sel ? bg : "transparent", color: sel ? c : "#888", border: `1px solid ${sel ? c : "#ddd"}`, borderRadius: 8, cursor: "pointer", fontWeight: sel ? 700 : 400 }}>{lv.label}</button>;
                       })}
@@ -961,8 +969,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
 
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setStep(4)} style={btnSecondary}>← Back</button>
-            <button onClick={goHome} style={btnSecondary}>Back to home</button>
-            <button onClick={startNew} style={btnSecondary}>Start a new profile</button>
+            <button onClick={goHome} style={btnSecondary}>Start a New Profile or See Saved Profiles</button>
           </div>
         </div>
       )}
