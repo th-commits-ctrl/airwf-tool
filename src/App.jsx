@@ -413,6 +413,7 @@ function downloadCsv(role, occupation, mappedTasks) {
 
 // ─── Main app (after sign-in) ──────────────────────────────────────────────
 function ProfileTool({ session }) {
+  const [view, setView] = useState("home"); // "home" | "saved" | "builder"
   const [step, setStep] = useState(1);
   const [role, setRole] = useState("");
   const [tasks, setTasks] = useState([{ id: 1, task: "", impact: "", importance: "" }]);
@@ -430,6 +431,7 @@ function ProfileTool({ session }) {
 
   const [savedList, setSavedList] = useState([]);
   const [savedLoading, setSavedLoading] = useState(true);
+  const [savedError, setSavedError] = useState("");
   const [currentProfileId, setCurrentProfileId] = useState(null);
   const [saveStatus, setSaveStatus] = useState(""); // "", "saving", "saved", or an error message
 
@@ -441,8 +443,9 @@ function ProfileTool({ session }) {
   // ── Saved profiles ──
   const loadSavedList = useCallback(async () => {
     setSavedLoading(true);
-    const { data, error } = await supabase.from("saved_profiles").select("id, role, updated_at").order("updated_at", { ascending: false });
-    if (!error) setSavedList(data || []);
+    const { data, error } = await supabase.from("saved_profiles").select("id, role, updated_at, occupation:data->occupation").order("updated_at", { ascending: false });
+    if (error) setSavedError(`Couldn't load your saved profiles: ${error.message}`);
+    else { setSavedError(""); setSavedList(data || []); }
     setSavedLoading(false);
   }, []);
 
@@ -463,7 +466,7 @@ function ProfileTool({ session }) {
 
   const openProfile = async (id) => {
     const { data, error } = await supabase.from("saved_profiles").select("id, data").eq("id", id).single();
-    if (error || !data) { setAiText("Couldn't open that profile. Try again."); return; }
+    if (error || !data) { setSavedError("Couldn't open that profile. Try again."); return; }
     const d = data.data || {};
     setRole(d.role || "");
     setTasks((d.tasks && d.tasks.length) ? d.tasks : [{ id: 1, task: "", impact: "", importance: "" }]);
@@ -474,15 +477,15 @@ function ProfileTool({ session }) {
     setCurrentProfileId(data.id);
     setSaveStatus("saved");
     setStep(5);
+    setView("builder");
   };
 
   const deleteProfile = async (id, name) => {
     if (!window.confirm(`Delete the saved profile for "${name}"? This can't be undone.`)) return;
     const { error } = await supabase.from("saved_profiles").delete().eq("id", id);
-    if (!error) {
-      if (id === currentProfileId) setCurrentProfileId(null);
-      loadSavedList();
-    }
+    if (error) { setSavedError(`Couldn't delete: ${error.message}`); return; }
+    if (id === currentProfileId) { setCurrentProfileId(null); setSaveStatus(""); }
+    loadSavedList();
   };
 
   // ── Occupation search and tasks (AI Resilience) ──
@@ -588,8 +591,102 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
 
   const STEPS = ["Role", "Tasks", "AI Impact", "Importance", "Results"];
 
+  // Work in progress that hasn't been saved since the last change
+  const inProgress = Boolean(role.trim() || filledTasks.length);
+  const hasUnsaved = inProgress && saveStatus !== "saved";
+
+  const startNew = () => {
+    if (hasUnsaved && !window.confirm(`Start a new profile? Your unsaved work on "${role || "your current profile"}" will be lost.`)) return;
+    resetAll();
+    setView("builder");
+  };
+  const goHome = () => { setView("home"); loadSavedList(); };
+  const goSaved = () => { setView("saved"); loadSavedList(); };
+
+  const navLink = (active) => ({ ...linkBtn, textDecoration: "none", color: active ? "#231F20" : "#1A9999", fontWeight: active ? 700 : 500, cursor: active ? "default" : "pointer" });
+  const Nav = () => (
+    <div className="no-print" style={{ display: "flex", gap: 18, alignItems: "center", marginBottom: "1.5rem", fontSize: 13 }}>
+      <button style={navLink(view === "home")} onClick={goHome}>Home</button>
+      <button style={navLink(view === "saved")} onClick={goSaved}>Saved profiles{!savedLoading && savedList.length > 0 && ` (${savedList.length})`}</button>
+      <button style={navLink(false)} onClick={startNew}>New profile</button>
+    </div>
+  );
+
+  const SavedList = () => (
+    savedLoading
+      ? <p style={{ fontSize: 13, color: "#999", margin: 0 }}>Loading...</p>
+      : savedList.length === 0
+        ? <div>
+            <p style={{ fontSize: 13, color: "#777", margin: "0 0 12px", lineHeight: 1.6 }}>You haven't saved any profiles yet. Finish a profile, then select "Save to my account" on the results page.</p>
+            <button onClick={startNew} style={btnPrimary(true)}>Start a new profile</button>
+          </div>
+        : savedList.map((p, i) => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 0", borderBottom: i < savedList.length - 1 ? "1px solid #f2f2f0" : "none", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#231F20" }}>{p.role}</div>
+              <div style={{ fontSize: 11, color: "#999", lineHeight: 1.6 }}>
+                {p.occupation?.title && <>{p.occupation.title} · </>}Last saved {new Date(p.updated_at).toLocaleString()}
+              </div>
+            </div>
+            <button onClick={() => openProfile(p.id)} style={{ ...btnSecondary, fontSize: 12, padding: "5px 12px", color: "#1A9999", borderColor: "#2BBFBF" }}>Open</button>
+            <button onClick={() => deleteProfile(p.id, p.role)} style={{ ...btnSecondary, fontSize: 12, padding: "5px 12px", color: "#999" }}>Delete</button>
+          </div>
+        ))
+  );
+
+  const errorBox = savedError && (
+    <div role="alert" style={{ background: "#FDF0EE", color: "#C0392B", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: "1rem", lineHeight: 1.6 }}>{savedError}</div>
+  );
+
+  // ── Home ──
+  if (view === "home") {
+    const homeCard = { ...card, marginBottom: 0, display: "flex", flexDirection: "column", gap: 10 };
+    return (
+      <>
+        <h2 style={{ ...h2Style, fontSize: 26, marginBottom: 4 }}>What would you like to do?</h2>
+        <p style={{ fontSize: 13, color: "#777", margin: "0 0 1.5rem", lineHeight: 1.7 }}>Build a new AI Transformation Profile for a role, or return to one you've saved.</p>
+        {errorBox}
+        {inProgress && (
+          <div style={{ background: "#F7F9CC", borderRadius: 10, padding: "12px 16px", marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: "#555", flex: 1 }}>
+              You have a profile in progress for <strong>{role || "an untitled role"}</strong>{hasUnsaved ? " with unsaved changes." : "."}
+            </span>
+            <button onClick={() => setView("builder")} style={{ ...btnSecondary, fontSize: 12, padding: "6px 14px", background: "#fff" }}>Continue</button>
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+          <div style={{ ...homeCard, borderTop: "4px solid #E8442A" }}>
+            <h3 style={{ fontFamily: "var(--font-title)", fontSize: 20, fontWeight: 500, margin: 0, color: "#231F20" }}>Create a new profile</h3>
+            <p style={{ fontSize: 13, color: "#777", margin: 0, lineHeight: 1.7, flex: 1 }}>Pick a role, load its O*NET tasks, classify how AI affects each one, and get an action plan.</p>
+            <div><button onClick={startNew} style={btnPrimary(true)}>Start a new profile</button></div>
+          </div>
+          <div style={{ ...homeCard, borderTop: "4px solid #2BBFBF" }}>
+            <h3 style={{ fontFamily: "var(--font-title)", fontSize: 20, fontWeight: 500, margin: 0, color: "#231F20" }}>View saved profiles</h3>
+            <p style={{ fontSize: 13, color: "#777", margin: 0, lineHeight: 1.7, flex: 1 }}>
+              {savedLoading ? "Checking your account..." : savedList.length === 0 ? "You haven't saved any profiles yet." : `You have ${savedList.length} saved profile${savedList.length === 1 ? "" : "s"}. Open one to review, update, or download it.`}
+            </p>
+            <div><button onClick={goSaved} style={btnSecondary}>View saved profiles</button></div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Saved profiles ──
+  if (view === "saved") {
+    return (
+      <>
+        <Nav />
+        <h2 style={{ ...h2Style, marginBottom: "1rem" }}>Your saved profiles</h2>
+        {errorBox}
+        <div style={card}><SavedList /></div>
+      </>
+    );
+  }
+
   return (
     <>
+      <Nav />
       {/* Stepper */}
       <div className="no-print" style={{ display: "flex", alignItems: "center", marginBottom: "2rem" }}>
         {STEPS.map((label, i) => {
@@ -614,27 +711,10 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
           <div style={card}>
             <h2 style={{ ...h2Style, marginBottom: 8 }}>What role would you like to analyze?</h2>
             <p style={{ fontSize: 13, color: "#777", margin: "0 0 1.25rem", lineHeight: 1.7 }}>Enter a specific job title or occupation. This is used to find the matching O*NET occupation and its tasks, and to apply the AI-Ready Workforce Framework.</p>
-            <input type="text" placeholder="e.g. Registered Nurse, Software Developer, Retail Salesperson..." value={role} onChange={(e) => { setRole(e.target.value); setOccMatches([]); setOccConfirmPending(false); }} onKeyDown={(e) => e.key === "Enter" && ok1 && setStep(2)} />
+            <input type="text" placeholder="e.g. Registered Nurse, Software Developer, Retail Salesperson..." value={role} onChange={(e) => { setRole(e.target.value); setOccMatches([]); setOccConfirmPending(false); setSaveStatus(""); }} onKeyDown={(e) => e.key === "Enter" && ok1 && setStep(2)} />
           </div>
           <button onClick={() => setStep(2)} disabled={!ok1} style={btnPrimary(ok1)}>Continue →</button>
 
-          <div style={{ ...card, marginTop: "2rem" }}>
-            <h3 style={{ fontFamily: "var(--font-title)", fontSize: 18, fontWeight: 500, margin: "0 0 10px", color: "#231F20" }}>Your saved profiles</h3>
-            {savedLoading
-              ? <p style={{ fontSize: 13, color: "#999", margin: 0 }}>Loading...</p>
-              : savedList.length === 0
-                ? <p style={{ fontSize: 13, color: "#999", margin: 0, lineHeight: 1.6 }}>Nothing saved yet. Finish a profile and select "Save to my account" on the results page.</p>
-                : savedList.map((p, i) => (
-                  <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: i < savedList.length - 1 ? "1px solid #f2f2f0" : "none" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#231F20" }}>{p.role}</div>
-                      <div style={{ fontSize: 11, color: "#999" }}>Last saved {new Date(p.updated_at).toLocaleString()}</div>
-                    </div>
-                    <button onClick={() => openProfile(p.id)} style={{ ...btnSecondary, fontSize: 12, padding: "5px 12px", color: "#1A9999", borderColor: "#2BBFBF" }}>Open</button>
-                    <button onClick={() => deleteProfile(p.id, p.role)} style={{ ...btnSecondary, fontSize: 12, padding: "5px 12px", color: "#999" }}>Delete</button>
-                  </div>
-                ))}
-          </div>
         </div>
       )}
 
@@ -800,7 +880,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
             </button>
             <button onClick={() => downloadCsv(role, occChosen, mappedTasks)} style={btnSecondary}>Download spreadsheet (CSV)</button>
             <button onClick={() => window.print()} style={btnSecondary}>Print or save as PDF</button>
-            {saveStatus === "saved" && <span style={{ fontSize: 12, color: "#1A9999" }}>Saved to your account.</span>}
+            {saveStatus === "saved" && <span style={{ fontSize: 12, color: "#1A9999" }}>Saved. Find it anytime under Saved profiles.</span>}
             {saveStatus && saveStatus !== "saved" && saveStatus !== "saving" && <span style={{ fontSize: 12, color: "#C0392B" }}>{saveStatus}</span>}
           </div>
 
@@ -881,7 +961,8 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
 
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setStep(4)} style={btnSecondary}>← Back</button>
-            <button onClick={resetAll} style={btnSecondary}>Start a new profile</button>
+            <button onClick={goHome} style={btnSecondary}>Back to home</button>
+            <button onClick={startNew} style={btnSecondary}>Start a new profile</button>
           </div>
         </div>
       )}
