@@ -122,45 +122,47 @@ function selectTasks(tasks, max) {
   return [...coreChosen, ...spread(supplemental, max - coreChosen.length)];
 }
 
-// AI Resilience "automate" -> Replace or Displace; "augment" -> Augment or Elevate
+// AI Resilience "automate" -> Replace/Displace or Complement; "augment" -> Complement or Augment/Elevate
 function airesGroup(likelihood) {
   return likelihood >= AUTOMATION_THRESHOLD
-    ? { key: "automate", label: "Automate", allowed: ["replace", "displace"], text: "Replace or Displace" }
-    : { key: "augment",  label: "Augment",  allowed: ["augment", "elevate"],  text: "Augment or Elevate" };
+    ? { key: "automate", label: "Automate", allowed: ["replace_displace", "complement"], text: "Replace/Displace or Complement" }
+    : { key: "augment",  label: "Augment",  allowed: ["complement", "augment_elevate"], text: "Complement or Augment/Elevate" };
 }
 const pct = (n) => `${Math.round(n * 100)}%`;
 
 const IMPACT_TYPES = [
-  { key: "replace",    label: "Replace",    color: "#C0392B", bg: "#FDF0EE", desc: "Routine physical tasks fully automated by AI, significantly decreasing human use" },
-  { key: "displace",   label: "Displace",   color: "#E8442A", bg: "#FEF3F1", desc: "Routine cognitive tasks increasingly performed by AI, decreasing human use" },
-  { key: "complement", label: "Complement", color: "#1A9999", bg: "#E8F8F8", desc: "Machine collaboration tasks where AI works alongside humans with neutral impact" },
-  { key: "augment",    label: "Augment",    color: "#8A9600", bg: "#F7F9CC", desc: "Complex cognitive tasks where AI increases human performance" },
-  { key: "elevate",    label: "Elevate",    color: "#2BBFBF", bg: "#D4F2F2", desc: "Interpersonal/human tasks whose importance is significantly increased by AI" },
+  { key: "replace_displace", label: "Replace/Displace", color: "#C0392B", bg: "#FDF0EE", desc: "Routine tasks that can be automated by AI with limited human oversight" },
+  { key: "complement",       label: "Complement",       color: "#A67C00", bg: "#FFF6D6", desc: "Tasks where AI works alongside humans, with neutral impact on human performance" },
+  { key: "augment_elevate",  label: "Augment/Elevate",  color: "#3D8B37", bg: "#EAF6E8", desc: "Complex cognitive or interpersonal tasks that can be enhanced by AI and increase human performance" },
 ];
 
-// Importance colors: green = very important, through to red = not important
+// Importance colors: green = important, red = not important
 const IMPORTANCE_COLORS = {
-  very_important:     { c: "#5E8C1F", bg: "#EEF6E2" },
-  important:          { c: "#1A9999", bg: "#E8F8F8" },
-  somewhat_important: { c: "#B7791F", bg: "#FDF4E3" },
-  not_important:      { c: "#C0392B", bg: "#FDF0EE" },
+  important:     { c: "#3D8B37", bg: "#EAF6E8" },
+  not_important: { c: "#C0392B", bg: "#FDF0EE" },
 };
 
 const IMPORTANCE_LEVELS = [
-  { key: "very_important",     label: "Very Important",     score: 3 },
-  { key: "important",          label: "Important",          score: 2 },
-  { key: "somewhat_important", label: "Somewhat Important", score: 1 },
-  { key: "not_important",      label: "Not Important",      score: 0 },
+  { key: "important",     label: "Important",     score: 1 },
+  { key: "not_important", label: "Not Important", score: 0 },
 ];
 
+// Converts profiles saved under the old 5 impact / 4 importance categories to the new ones
+const OLD_IMPACT_MAP = { replace: "replace_displace", displace: "replace_displace", augment: "augment_elevate", elevate: "augment_elevate" };
+const OLD_IMPORTANCE_MAP = { very_important: "important", somewhat_important: "not_important" };
+const upgradeTask = (t) => ({
+  ...t,
+  impact: OLD_IMPACT_MAP[t.impact] || t.impact,
+  importance: OLD_IMPORTANCE_MAP[t.importance] || t.importance,
+});
+
 function getAction(impact, importance) {
-  const high = importance === "very_important" || importance === "important";
-  const low  = importance === "somewhat_important" || importance === "not_important";
-  if ((impact === "replace" || impact === "displace" || impact === "complement") && high) return "future_proof";
-  if ((impact === "augment" || impact === "elevate") && high)  return "capitalize";
-  if ((impact === "replace" || impact === "displace" || impact === "complement") && low) return "automate";
-  if ((impact === "augment" || impact === "elevate") && low)   return "reimagine";
-  return "automate";
+  const high = importance === "important";
+  const atRisk = impact === "replace_displace" || impact === "complement";
+  if (atRisk && high)  return "future_proof";
+  if (!atRisk && high) return "capitalize";
+  if (atRisk)          return "automate";
+  return "reimagine";
 }
 
 const ACTION_META = {
@@ -171,10 +173,10 @@ const ACTION_META = {
 };
 
 const QUADRANTS = [
-  { key: "future_proof", label: "High importance + Complement / Replace / Displace", accent: "#E8442A" },
-  { key: "capitalize",   label: "High importance + Augment / Elevate",               accent: "#2BBFBF" },
-  { key: "automate",     label: "Low importance + Complement / Replace / Displace",  accent: "#C8D400" },
-  { key: "reimagine",    label: "Low importance + Augment / Elevate",                accent: "#888"    },
+  { key: "future_proof", label: "Important + Replace/Displace or Complement",     accent: "#E8442A" },
+  { key: "capitalize",   label: "Important + Augment/Elevate",                     accent: "#2BBFBF" },
+  { key: "automate",     label: "Not Important + Replace/Displace or Complement", accent: "#C8D400" },
+  { key: "reimagine",    label: "Not Important + Augment/Elevate",                 accent: "#888"    },
 ];
 
 const impactLabel = (k) => IMPACT_TYPES.find((t) => t.key === k)?.label || "";
@@ -490,7 +492,7 @@ function ProfileTool({ session }) {
     if (error || !data) { setSavedError("Couldn't open that profile. Try again."); return; }
     const d = data.data || {};
     setRole(d.role || "");
-    setTasks((d.tasks && d.tasks.length) ? d.tasks : [{ id: 1, task: "", impact: "", importance: "" }]);
+    setTasks((d.tasks && d.tasks.length) ? d.tasks.map(upgradeTask) : [{ id: 1, task: "", impact: "", importance: "" }]);
     setImportanceDefinition(d.importanceDefinition || "");
     setOccChosen(d.occupation || d.onet || null);
     setAires(d.aires || null); setAiresNote("");
@@ -585,7 +587,7 @@ function ProfileTool({ session }) {
         `You are an expert in the JFF AI-Ready Workforce Framework and the Anthropic Economic Index.
 Respond ONLY with valid JSON, no other text:
 {"impact":"${allowed.join("|")}","confidence":"high|medium|low","rationale":"1-2 sentence explanation"}
-Definitions: replace=routine physical, AI automates; displace=routine cognitive, AI takes over; complement=machine collab, neutral; augment=complex cognitive, AI boosts humans; elevate=interpersonal/human, AI raises importance${dataNote}`
+Definitions: replace_displace=routine tasks that can be automated by AI with limited human oversight; complement=tasks where AI works alongside humans, with neutral impact on human performance; augment_elevate=complex cognitive or interpersonal tasks that can be enhanced by AI and increase human performance${dataNote}`
       );
       const parsed = JSON.parse(result.replace(/```json|```/g, "").trim());
       if (!allowed.includes(parsed.impact)) { parsed.impact = null; parsed.rationale = `${parsed.rationale || ""} (Suggestion didn't fit the AI Resilience group. Please select manually.)`.trim(); }
@@ -796,7 +798,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
         <div>
           <div style={card}>
             <h2 style={h2Style}>Classify the AI impact for each task</h2>
-            <p style={{ fontSize: 13, color: "#777", margin: "0 0 1rem", lineHeight: 1.7 }}>Select how AI is likely to affect each task. Where AI Resilience data is available, it narrows each task to two options: tasks likely to be automated point to Replace or Displace, and the rest point to Augment or Elevate. "Help me classify" then suggests which of the two fits best.</p>
+            <p style={{ fontSize: 13, color: "#777", margin: "0 0 1rem", lineHeight: 1.7 }}>Select how AI is likely to affect each task. Where AI Resilience data is available, it narrows each task to two options: tasks likely to be automated point to Replace/Displace or Complement, and the rest point to Complement or Augment/Elevate. "Help me classify" then suggests which of the two fits best.</p>
             <div style={{ background: aires ? "#E8F8F8" : "#F8F8F6", border: `1px solid ${aires ? "#2BBFBF" : "#eee"}`, borderRadius: 8, padding: "10px 14px", marginBottom: "1rem", fontSize: 13, color: aires ? "#1A9999" : "#777", lineHeight: 1.6 }}>
               {aires
                 ? <>AI Resilience data for <a href={aires.url} target="_blank" rel="noreferrer" style={{ color: "#1A9999", fontWeight: 600 }}>{aires.name}</a>{aires.label && <> (rated {aires.label}{aires.score != null && `, ${pct(aires.score)}`})</>}. Scores found for {filledTasks.filter((t) => t.airesilience).length} of {filledTasks.length} tasks.</>
@@ -810,7 +812,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: "1.25rem", padding: "12px 14px", background: "#F8F8F6", borderRadius: 8, border: "1px solid #eee" }}>
               {IMPACT_TYPES.map((t) => (
                 <div key={t.key} style={{ display: "flex", alignItems: "baseline", gap: 10, fontSize: 12, color: "#666", lineHeight: 1.5 }}>
-                  <span style={{ minWidth: 92, flexShrink: 0 }}><Badge impact={t.key} /></span>
+                  <span style={{ minWidth: 120, flexShrink: 0 }}><Badge impact={t.key} /></span>
                   <span>{t.desc}</span>
                 </div>
               ))}
@@ -826,7 +828,7 @@ Definitions: replace=routine physical, AI automates; displace=routine cognitive,
                         <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 600, color: "#231F20" }}>{t.task}</p>
                         {t.airesilience && (() => {
                           const g = airesGroup(t.airesilience.automationLikelihood);
-                          return <p style={{ margin: "0 0 10px", fontSize: 12, color: "#666" }}>AI Resilience: {pct(t.airesilience.automationLikelihood)} automation likelihood, so <strong style={{ color: g.key === "automate" ? "#C0392B" : "#8A9600" }}>{g.text}</strong></p>;
+                          return <p style={{ margin: "0 0 10px", fontSize: 12, color: "#666" }}>AI Resilience: {pct(t.airesilience.automationLikelihood)} automation likelihood, so <strong style={{ color: g.key === "automate" ? "#C0392B" : "#3D8B37" }}>{g.text}</strong></p>;
                         })()}
                         {!t.airesilience && <div style={{ height: 4 }} />}
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
