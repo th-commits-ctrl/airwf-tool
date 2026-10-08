@@ -26,6 +26,7 @@ const fontStyle = `
 
 // ─── Settings you may want to change ───────────────────────────────────────
 const CLAUDE_API_URL = import.meta.env.VITE_API_URL || "/api/claude";
+const ONET_API_URL = "/api/onet";
 const MAX_TASKS = 10; // Most tasks to load into step 2 (Core tasks are always loaded first)
 const AIRES_API_URL = "https://www.airesilience.org/ext/api";
 const AUTOMATION_THRESHOLD = 0.5; // AI Resilience likelihood at/above this = "automate" group
@@ -71,7 +72,7 @@ async function fetchAiResilience(code) {
 // Searches AI Resilience for detailed occupations matching a job title.
 // If the full phrase finds nothing, it searches each word and ranks occupations matching the most words.
 const STOP_WORDS = new Set(["and", "the", "for", "with", "of", "senior", "junior", "lead", "assistant", "associate", "head", "chief"]);
-async function searchOccupations(title) {
+async function searchAiResilienceOccupations(title) {
   const run = async (q) => {
     const r = await fetch(`${AIRES_API_URL}/careers/search?q=${encodeURIComponent(q)}&level=detailed&limit=10`);
     const json = await r.json().catch(() => ({}));
@@ -91,6 +92,18 @@ async function searchOccupations(title) {
     }
   }
   return [...tally.values()].sort((x, y) => y.hits - x.hits || x.rank - y.rank).slice(0, 10).map((x) => x.occ);
+}
+
+// Finds occupations for a job title. Uses O*NET's search first, since it understands alternate job titles.
+// If O*NET is unavailable or finds nothing, falls back to AI Resilience's simpler name search.
+async function searchOccupations(title) {
+  try {
+    const { occupations } = await authedPost(ONET_API_URL, { keyword: title });
+    if (occupations?.length) return { occupations, source: "onet" };
+  } catch (err) {
+    console.warn("O*NET search unavailable, using AI Resilience search instead:", err.message);
+  }
+  return { occupations: await searchAiResilienceOccupations(title), source: "aires" };
 }
 
 // Picks which tasks to load: Core tasks first, then Supplemental if there's room.
@@ -260,7 +273,7 @@ function Footer() {
         </div>
       </div>
       <p style={{ fontSize: 11, color: "#999", margin: 0, lineHeight: 1.6, maxWidth: 720 }}>
-        Occupation and task information is derived from the <a href="https://www.onetcenter.org/database.html" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>O*NET database</a> by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA), provided through AI Resilience. O*NET® is a trademark of USDOL/ETA.
+        Occupation search uses information from <a href="https://services.onetcenter.org/" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>O*NET Web Services</a> by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA). Task information is derived from the <a href="https://www.onetcenter.org/database.html" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>O*NET database</a> by USDOL/ETA, provided through AI Resilience. O*NET® is a trademark of USDOL/ETA.
       </p>
       <p style={{ fontSize: 11, color: "#999", margin: "4px 0 0", lineHeight: 1.6, maxWidth: 720 }}>
         Task automation data: <a href="https://www.airesilience.org" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>AI Resilience Report</a> by <a href="https://www.careervillage.org" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>CareerVillage.org</a>, licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer" style={{ color: "#1A9999" }}>CC BY 4.0</a>.
@@ -500,7 +513,7 @@ function ProfileTool({ session }) {
   const suggestTasks = useCallback(async () => {
     setLoading(true); setAiText(""); setAiresNote(""); setOccConfirmPending(false);
     try {
-      const occupations = await searchOccupations(role);
+      const { occupations } = await searchOccupations(role);
       if (!occupations.length) {
         setOccMatches([]);
         setAiText(`No occupations found matching "${role}". Try a shorter or more common job title on step 1 (for example, "nurse" instead of "charge nurse"), or enter tasks yourself.`);
@@ -521,7 +534,17 @@ function ProfileTool({ session }) {
     setLoading(true);
     try {
       const data = await fetchAiResilience(currentMatch.code);
-      if (!data?.tasks?.length) throw new Error("no tasks are listed for this occupation");
+      if (!data?.tasks?.length) {
+        setLoading(false);
+        if (occIndex + 1 < occMatches.length) {
+          setAiText(`Task data isn't available for ${currentMatch.title} (${currentMatch.code}), so here's the next match.`);
+          setOccIndex(occIndex + 1);
+        } else {
+          setOccConfirmPending(false);
+          setAiText(`Task data isn't available for ${currentMatch.title} (${currentMatch.code}), and that was the last match. Try a different job title on step 1, or enter tasks yourself.`);
+        }
+        return;
+      }
       const chosen = selectTasks(data.tasks, MAX_TASKS).map((t, i) => ({
         id: Date.now() + i, onetTaskId: t.id, task: t.task, impact: "", importance: "",
         airesilience: typeof t.automationLikelihood === "number" ? { automationLikelihood: t.automationLikelihood, taskType: t.taskType || null } : null,
