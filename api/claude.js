@@ -1,20 +1,33 @@
 // api/claude.js  —  Vercel Serverless Function
-// Proxies requests to the Anthropic API so the key never reaches the browser.
+// Passes requests to the Anthropic API so the key never reaches the browser.
+// Only signed-in users of the tool can use it.
+
+async function getSignedInUser(req) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  const url = process.env.VITE_SUPABASE_URL;
+  const key = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!token || !url || !key) return null;
+  try {
+    const r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: key, Authorization: `Bearer ${token}` } });
+    return r.ok ? await r.json() : null;
+  } catch {
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
-  // Only allow POST
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  // Basic CORS headers — tighten the origin in production
   res.setHeader("Access-Control-Allow-Origin", process.env.ALLOWED_ORIGIN || "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  const { model, max_tokens, system, messages } = req.body;
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // Validate required fields
+  const user = await getSignedInUser(req);
+  if (!user) return res.status(401).json({ error: "Please sign in again." });
+
+  const { model, max_tokens, system, messages } = req.body || {};
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array is required" });
   }
@@ -24,27 +37,24 @@ export default async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,   // Set in Vercel dashboard
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: model || "claude-sonnet-4-20250514",
-        max_tokens: max_tokens || 1000,
+        model: model || "claude-sonnet-5-5",
+        max_tokens: Math.min(max_tokens || 1000, 2000),
         system,
         messages,
       }),
     });
 
     const data = await response.json();
-
-    // Forward any API-level errors back to the client
     if (!response.ok) {
       return res.status(response.status).json({ error: data.error?.message || "Anthropic API error" });
     }
-
     return res.status(200).json(data);
   } catch (err) {
-    console.error("Proxy error:", err);
+    console.error("Claude proxy error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
