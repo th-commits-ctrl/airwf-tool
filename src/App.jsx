@@ -1,6 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
 import { supabase, supabaseConfigured } from "./supabaseClient.js";
 
+// Privacy notice shown on the sign-in and Role screens. Edit this one line to change the wording everywhere.
+const PRIVACY_NOTICE = "Anonymized data from this tool will be used to improve the functionality and recommendations.";
+const privacyNoteStyle = { fontSize: 12, color: "#888", margin: "1rem 0 0", lineHeight: 1.6 };
+
 const fontStyle = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap');
   :root {
@@ -365,6 +369,7 @@ function AuthScreen({ recovery, onRecoveryDone }) {
       <div style={card}>
         <h2 style={h2Style}>{titles[mode][0]}</h2>
         <p style={{ fontSize: 13, color: "#777", margin: "0 0 1.25rem", lineHeight: 1.7 }}>{titles[mode][1]}</p>
+        {(mode === "signin" || mode === "signup") && <p style={{ ...privacyNoteStyle, margin: "-0.5rem 0 1.25rem" }}>{PRIVACY_NOTICE}</p>}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }} onKeyDown={(e) => e.key === "Enter" && !busy && submit()}>
           {mode !== "reset" && (
@@ -458,6 +463,11 @@ function ProfileTool({ session }) {
   const [currentProfileId, setCurrentProfileId] = useState(null);
   const [saveStatus, setSaveStatus] = useState(""); // "", "saving", "saved", or an error message
 
+  // ── Usage tracking: one "session" per run through the tool ──
+  const newSessionId = () => (window.crypto?.randomUUID ? window.crypto.randomUUID() : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const [sessionId, setSessionId] = useState(newSessionId);
+  const [maxStep, setMaxStep] = useState(1);
+
   const addTask    = () => setTasks((t) => [...t, { id: Date.now(), task: "", impact: "", importance: "" }]);
   const removeTask = (id) => setTasks((t) => t.filter((x) => x.id !== id));
   const updateTask = (id, f, v) => { setTasks((t) => t.map((x) => x.id === id ? { ...x, [f]: v } : x)); setSaveStatus(""); };
@@ -497,6 +507,7 @@ function ProfileTool({ session }) {
     setOccChosen(d.occupation || d.onet || null);
     setAires(d.aires || null); setAiresNote("");
     setOccMatches([]); setOccIndex(0); setOccConfirmPending(false); setAiText(""); setImpactHelpData({});
+    setSessionId(newSessionId()); setMaxStep(5);
     setCurrentProfileId(data.id);
     setSaveStatus("saved");
     setStep(5);
@@ -592,6 +603,7 @@ Definitions: replace_displace=routine tasks that can be automated by AI with lim
       const parsed = JSON.parse(result.replace(/```json|```/g, "").trim());
       if (!allowed.includes(parsed.impact)) { parsed.impact = null; parsed.rationale = `${parsed.rationale || ""} (Suggestion didn't fit the AI Resilience group. Please select manually.)`.trim(); }
       setImpactHelpData((d) => ({ ...d, [taskId]: { loading: false, result: parsed } }));
+      if (parsed.impact) setTasks((ts) => ts.map((x) => x.id === taskId ? { ...x, claudeSuggestion: parsed.impact } : x));
     } catch { setImpactHelpData((d) => ({ ...d, [taskId]: { loading: false, result: { impact: null, rationale: "Could not classify. Please select manually." } } })); }
   }, [role]);
 
@@ -615,7 +627,61 @@ Definitions: replace_displace=routine tasks that can be automated by AI with lim
   const ok3 = ok2 && filledTasks.every((t) => t.impact);
   const ok4 = ok2 && filledTasks.every((t) => t.impact && t.importance);
 
+  // Track step progress
+  useEffect(() => { setMaxStep((m) => Math.max(m, step)); }, [step]);
+
+  // ── Automatic usage tracking ──
+  // A couple of seconds after the person stops making changes, this quietly writes their progress to
+  // Supabase (tables usage_sessions and usage_tasks). It never blocks the screen and never shows errors.
+  useEffect(() => {
+    if (view !== "builder" || !role.trim()) return;
+    const timer = setTimeout(async () => {
+      try {
+        const userId = session.user.id, userEmail = session.user.email;
+        const now = new Date().toISOString();
+        const { error: sErr } = await supabase.from("usage_sessions").upsert({
+          session_id: sessionId, user_id: userId, user_email: userEmail,
+          role: role.trim(),
+          occupation_code: occChosen?.code || null, occupation_title: occChosen?.title || null,
+          aires_label: aires?.label || null, aires_score: aires?.score ?? null,
+          max_step_reached: maxStep, current_step: step,
+          task_count: filledTasks.length,
+          saved: currentProfileId != null, profile_id: currentProfileId != null ? String(currentProfileId) : null,
+          updated_at: now,
+        }, { onConflict: "session_id" });
+        if (sErr) throw sErr;
+
+        const rows = filledTasks.map((t) => {
+          const g = t.airesilience ? airesGroup(t.airesilience.automationLikelihood) : null;
+          return {
+            session_id: sessionId, task_key: String(t.id), user_id: userId, user_email: userEmail,
+            role: role.trim(), occupation_title: occChosen?.title || null,
+            task: t.task, task_type: t.airesilience?.taskType || null,
+            aires_likelihood: t.airesilience?.automationLikelihood ?? null,
+            aires_group: g ? g.key : null,
+            claude_suggestion: t.claudeSuggestion || null,
+            user_impact: t.impact || null, user_importance: t.importance || null,
+            differs_from_aires: g && t.impact ? !g.allowed.includes(t.impact) : null,
+            differs_from_claude: t.claudeSuggestion && t.impact ? t.claudeSuggestion !== t.impact : null,
+            updated_at: now,
+          };
+        });
+        if (rows.length) {
+          const { error: tErr } = await supabase.from("usage_tasks").upsert(rows, { onConflict: "session_id,task_key" });
+          if (tErr) throw tErr;
+        }
+        // Remove rows for tasks the person has since deleted or blanked out
+        const keep = rows.map((r) => r.task_key);
+        let del = supabase.from("usage_tasks").delete().eq("session_id", sessionId);
+        if (keep.length) del = del.not("task_key", "in", `(${keep.map((k) => `"${k}"`).join(",")})`);
+        await del;
+      } catch (e) { console.warn("Usage tracking failed:", e?.message || e); }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [view, role, occChosen, aires, tasks, step, maxStep, sessionId, currentProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const resetAll = () => {
+    setSessionId(newSessionId()); setMaxStep(1);
     setStep(1); setRole(""); setTasks([{ id: 1, task: "", impact: "", importance: "" }]); setAiText("");
     setOccMatches([]); setOccIndex(0); setOccConfirmPending(false); setOccChosen(null);
     setImportanceDefinition(""); setImpactHelpData({}); setCurrentProfileId(null); setSaveStatus("");
@@ -745,6 +811,7 @@ Definitions: replace_displace=routine tasks that can be automated by AI with lim
             <h2 style={{ ...h2Style, marginBottom: 8 }}>What role would you like to analyze?</h2>
             <p style={{ fontSize: 13, color: "#777", margin: "0 0 1.25rem", lineHeight: 1.7 }}>Enter a specific job title or occupation. This is used to find the matching O*NET occupation and its tasks, and to apply the AI-Ready Workforce Framework.</p>
             <input type="text" placeholder="e.g. Registered Nurse, Software Developer, Retail Salesperson..." value={role} onChange={(e) => { setRole(e.target.value); setOccMatches([]); setOccConfirmPending(false); setSaveStatus(""); }} onKeyDown={(e) => e.key === "Enter" && ok1 && setStep(2)} />
+            <p style={privacyNoteStyle}>{PRIVACY_NOTICE}</p>
           </div>
           <button onClick={() => setStep(2)} disabled={!ok1} style={btnPrimary(ok1)}>Continue →</button>
 
